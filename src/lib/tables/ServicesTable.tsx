@@ -140,9 +140,9 @@ const ServicesTable = () => {
             className="p-4 rounded shadow flex flex-row items-center space-x-8"
           >
             <div className="font-semibold w-1/4">{service.title}</div>
-            <div className="w-1/4">{service.username}</div>
-            <div className="w-1/4 text-xs text-gray-500">{service.user_id}</div>
-            <div className="w-1/4">
+            <div className="w-1/4 text-xs text-gray-500">{service.username}</div>
+            {/* <div className="w-1/4 text-xs text-gray-500">{service.user_id}</div> */}
+            <div className="w-1/4 text-sm">
               {new Date(service.created_at || "").toLocaleString("pt-BR", {
                 dateStyle: "short",
                 timeStyle: "short",
