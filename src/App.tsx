@@ -1,8 +1,8 @@
 import { Route, Routes } from "react-router-dom"
 import AuthLayout from "./_auth/AuthLayout"
 import RootLayout from "./_root/RootLayout"
-import Dashboard from "./_root/pages/Dashboard"
 import SignInForm from "./_auth/forms/SignInForm"
+import Dashboard from "./_root/pages/Dashboard"
 
 
 const App = () => {

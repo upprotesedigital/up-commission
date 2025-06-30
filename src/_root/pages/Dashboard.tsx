@@ -30,7 +30,7 @@ const Dashboard = () => {
   }, [user?.id]);
 
   useEffect(() => {
-    if (import.meta.env.DEV && services.map.length > 0) {
+    if (import.meta.env.DEV && services.length > 0) {
       console.log("Current authenticated user ID:", services.map(service => service.user_id));
     }
   }, [services]);
@@ -53,7 +53,7 @@ const Dashboard = () => {
   }
 
   if (error) {
-    return { error }
+    return <div className="text-red-500">Error: {error}</div>;
   }
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
