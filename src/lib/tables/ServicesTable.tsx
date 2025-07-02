@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { useUser } from "@clerk/clerk-react"; // Add Clerk for user auth
 import ServiceModal from "../components/ServiceModal";
@@ -8,15 +8,19 @@ const supabaseAnonKey = import.meta.env.VITE_CLERK_SUPABASE_KEY as string;
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 type Service = {
+  include_in_total: boolean;
   id: string;
   title: string;
+  service_type?: string;
   user_id: string;
   username: string;
   created_at?: string;
+  price?: number;
+  admin_override?: boolean; // Add this field
 };
 
 const ServicesTable = () => {
-  const { user } = useUser(); // Get current user from Clerk
+  const { user } = useUser();
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -24,6 +28,29 @@ const ServicesTable = () => {
   const [modalLoading, setModalLoading] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
 
+    const groupedServices = useMemo(() => {
+    const grouped = services.reduce((acc, service) => {
+      const date = new Date(service.created_at || "");
+      const monthYear = `${date.getFullYear()}-${String(
+        date.getMonth() + 1
+      ).padStart(2, "0")}`;
+
+      if (!acc[monthYear]) {
+        acc[monthYear] = { services: [], total: 0 };
+      }
+
+      acc[monthYear].services.push(service);
+
+      // Only include in total if include_in_total is true or admin_override is true
+      if (service.include_in_total !== false) {
+        acc[monthYear].total += service.price || 0;
+      }
+
+      return acc;
+    }, {} as Record<string, { services: Service[]; total: number }>);
+
+    return Object.entries(grouped).sort(([a], [b]) => b.localeCompare(a));
+  }, [services]);
   useEffect(() => {
     const fetchServices = async () => {
       if (!user) return; // Don't fetch if no user
@@ -44,7 +71,12 @@ const ServicesTable = () => {
     fetchServices();
   }, [user]);
 
-  const handleCreateService = async (title: string) => {
+  const handleCreateService = async (
+    serviceType: string,
+    title: string,
+    price: number,
+    adminOverride: boolean = false
+  ) => {
     if (!user) {
       setModalError("Usuário não autenticado");
       return;
@@ -55,16 +87,31 @@ const ServicesTable = () => {
 
     try {
       if (!title.trim()) {
-        throw new Error("O título do serviço é obrigatório");
+        throw new Error("O número/código é obrigatório");
       }
+      if (price < 0) {
+        throw new Error("O preço deve ser maior ou igual a zero");
+      }
+
+      // Check if it's a duplicate
+      const { data: existingServices } = await supabase
+        .from("services")
+        .select("*")
+        .eq("title", title.trim());
+
+      const isDuplicate = existingServices && existingServices.length > 0;
 
       const { data, error } = await supabase
         .from("services")
         .insert([
           {
             title: title.trim(),
-            user_id: user.id, // Include user_id in the insert
+            service_type: serviceType,
+            price: price,
+            user_id: user.id,
             username: user.username || user.firstName || "Unknown",
+            admin_override: adminOverride,
+            include_in_total: !isDuplicate || adminOverride, // Add this field to track if it should be included in totals
           },
         ])
         .select();
@@ -133,24 +180,76 @@ const ServicesTable = () => {
         </div>
       </div>
 
-      <ul className="space-y-2">
-        {services.map((service) => (
-          <li
-            key={service.id}
-            className="p-4 rounded shadow flex flex-row items-center space-x-8"
-          >
-            <div className="font-semibold w-1/4">{service.title}</div>
-            <div className="w-1/4 text-xs text-gray-500">{service.username}</div>
-            {/* <div className="w-1/4 text-xs text-gray-500">{service.user_id}</div> */}
-            <div className="w-1/4 text-sm">
-              {new Date(service.created_at || "").toLocaleString("pt-BR", {
-                dateStyle: "short",
-                timeStyle: "short",
-              })}
+      <div className="space-y-6">
+        {groupedServices.map(
+          ([monthYear, { services: monthServices, total }]) => (
+            <div key={monthYear}>
+              <h3 className="text-lg font-semibold text-gray-700 mb-3 border-b pb-2 flex justify-between items-center">
+                <span>
+                  {monthYear} ({monthServices.length} serviços)
+                </span>
+                <span className="text-green-600 font-bold">
+                  Total:{" "}
+                  {new Intl.NumberFormat("pt-BR", {
+                    style: "currency",
+                    currency: "BRL",
+                  }).format(total)}
+                </span>
+              </h3>
+              <ul className="space-y-2">
+                {monthServices.map((service) => (
+                  <li
+                    key={service.id}
+                    className={`p-4 rounded shadow flex flex-row items-center space-x-8 ${
+                      service.include_in_total === false
+                        ? "bg-yellow-50 border border-yellow-200"
+                        : ""
+                    }`}
+                  >
+                    <div className="font-semibold w-1/4">
+                      {service.service_type && (
+                        <span className="text-blue-600 text-md mr-2">
+                          {service.service_type}:
+                        </span>
+                      )}
+                      {service.title}
+                      {service.include_in_total === false && (
+                        <span className="ml-2 text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded">
+                          Não incluído no total
+                        </span>
+                      )}
+                    </div>
+                    <div className="w-1/6 text-xs text-gray-500">
+                      {service.username}
+                    </div>
+                    <div
+                      className={`w-1/6 text-sm font-semibold ${
+                        service.include_in_total === false
+                          ? "text-gray-400"
+                          : "text-green-600"
+                      }`}
+                    >
+                      {new Intl.NumberFormat("pt-BR", {
+                        style: "currency",
+                        currency: "BRL",
+                      }).format(service.price || 0)}
+                    </div>
+                    <div className="w-1/4 text-sm">
+                      {new Date(service.created_at || "").toLocaleString(
+                        "pt-BR",
+                        {
+                          dateStyle: "short",
+                          timeStyle: "short",
+                        }
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
             </div>
-          </li>
-        ))}
-      </ul>
+          )
+        )}
+      </div>
 
       <ServiceModal
         isOpen={isModalOpen}
@@ -158,6 +257,7 @@ const ServicesTable = () => {
         onSubmit={handleCreateService}
         loading={modalLoading}
         error={modalError}
+        isAdmin={user?.publicMetadata?.role === "admin"} // Pass admin status
       />
     </div>
   );
